@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Space Explorer ULTRA</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { margin:0; overflow:hidden; background:black; color:white; font-family:Arial; }
+#ui { position:absolute; top:10px; left:10px; }
+canvas { display:block; margin:auto; background:black; }
+button { padding:8px; margin:2px; }
+#controls { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); }
+</style>
+</head>
+<body>
+
+<div id="ui">
+❤️ <span id="health">3</span>
+🏆 <span id="score">0</span>
+💾 <span id="high">0</span>
+<button onclick="restartGame()">Restart</button>
+</div>
+
+<div id="controls">
+<button onclick="move('left')">⬅️</button>
+<button onclick="move('up')">⬆️</button>
+<button onclick="move('down')">⬇️</button>
+<button onclick="move('right')">➡️</button>
+<button onclick="shoot()">🔫</button>
+</div>
+
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let player, lasers, enemyLasers, ufos, powerUps, boss, bullets, particles, stars;
+let keys={}, health, score, gameOver;
+let highScore = localStorage.getItem("spaceHigh") || 0;
+document.getElementById("high").textContent = highScore;
+
+const hitSound = new Audio("https://actions.google.com/sounds/v1/impacts/explosion.ogg");
+const shootSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+const music = new Audio("https://actions.google.com/sounds/v1/ambiences/space_ambience.ogg");
+music.loop=true; music.volume=0.3; music.play();
+
+function init(){
+player={x:400,y:500,size:20,speed:5,shield:0};
+lasers=[]; enemyLasers=[]; ufos=[]; powerUps=[]; bullets=[]; particles=[];
+boss=null; health=3; score=0; gameOver=false;
+stars = Array.from({length:100},()=>({x:Math.random()*800,y:Math.random()*600,s:Math.random()*2}));
+updateUI();
+}
+
+function updateUI(){
+document.getElementById("health").textContent=health;
+document.getElementById("score").textContent=score;
+document.getElementById("high").textContent=highScore;
+}
+
+function move(dir){
+if(dir==='left') player.x-=player.speed;
+if(dir==='right') player.x+=player.speed;
+if(dir==='up') player.y-=player.speed;
+if(dir==='down') player.y+=player.speed;
+}
+
+function shoot(){
+bullets.push({x:player.x,y:player.y,speed:-7});
+shootSound.play();
+}
+
+document.addEventListener("keydown",e=>{keys[e.key]=true;if(e.key===' ')shoot();});
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+function spawnUFO(){ufos.push({x:Math.random()*800,y:0,speed:2});}
+function spawnPowerUp(){powerUps.push({x:Math.random()*800,y:0,type:Math.random()<0.5?'shield':'speed'});} 
+function spawnBoss(){boss={x:400,y:80,health:30,phase:1,attackTimer:0};}
+
+function createExplosion(x,y){
+for(let i=0;i<20;i++){
+particles.push({x,y,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,life:30});
+}
+}
+
+function update(){
+if(gameOver) return;
+
+if(keys['a']||keys['ArrowLeft']) player.x-=player.speed;
+if(keys['d']||keys['ArrowRight']) player.x+=player.speed;
+if(keys['w']||keys['ArrowUp']) player.y-=player.speed;
+if(keys['s']||keys['ArrowDown']) player.y+=player.speed;
+
+if(Math.random()<0.02) spawnUFO();
+if(Math.random()<0.005) spawnPowerUp();
+if(score>20 && !boss) spawnBoss();
+
+// stars
+stars.forEach(s=>{s.y+=1;if(s.y>600)s.y=0;});
+
+ufos.forEach((u,i)=>{
+u.y+=u.speed;
+if(Math.random()<0.02) enemyLasers.push({x:u.x,y:u.y,speed:5});
+if(u.y>600){ufos.splice(i,1);score++;}
+});
+
+// bullets
+bullets.forEach((b,i)=>{
+b.y+=b.speed;
+ufos.forEach((u,ui)=>{
+if(Math.abs(b.x-u.x)<15 && Math.abs(b.y-u.y)<15){
+createExplosion(u.x,u.y);
+ufos.splice(ui,1);
+bullets.splice(i,1);
+score+=2;
+}
+});
+if(boss && Math.abs(b.x-boss.x)<40 && Math.abs(b.y-boss.y)<20){
+boss.health--; bullets.splice(i,1);
+if(boss.health<=15) boss.phase=2;
+if(boss.health<=0){createExplosion(boss.x,boss.y); boss=null; score+=20;}
+}
+});
+
+// boss attacks
+if(boss){
+boss.attackTimer++;
+if(boss.attackTimer>50){
+let count = boss.phase===1?5:10;
+for(let i=0;i<count;i++){
+enemyLasers.push({x:boss.x+i*10-50,y:boss.y,speed:6});
+}
+boss.attackTimer=0;
+}
+}
+
+powerUps.forEach((p,i)=>{
+p.y+=2;
+if(Math.abs(p.x-player.x)<20 && Math.abs(p.y-player.y)<20){
+if(p.type==='shield') player.shield=200;
+if(p.type==='speed') player.speed=8;
+powerUps.splice(i,1);
+}
+});
+
+if(player.shield>0) player.shield--;
+
+enemyLasers.forEach((l,i)=>{
+l.y+=l.speed;
+if(Math.abs(l.x-player.x)<20 && Math.abs(l.y-player.y)<20){
+enemyLasers.splice(i,1);
+if(player.shield<=0){health--; hitSound.play(); createExplosion(player.x,player.y);} 
+if(health<=0) endGame();
+}
+});
+
+particles.forEach((p,i)=>{
+p.x+=p.vx; p.y+=p.vy; p.life--;
+if(p.life<=0) particles.splice(i,1);
+});
+
+updateUI();
+}
+
+function endGame(){
+gameOver=true;
+if(score>highScore){highScore=score;localStorage.setItem("spaceHigh",highScore);} 
+alert("Game Over");
+}
+
+function draw(){
+ctx.clearRect(0,0,800,600);
+
+// stars
+ctx.fillStyle='white';
+stars.forEach(s=>ctx.fillRect(s.x,s.y,s.s,s.s));
+
+// player
+ctx.fillStyle=player.shield>0?'blue':'cyan';
+ctx.beginPath(); ctx.moveTo(player.x,player.y-20);
+ctx.lineTo(player.x-20,player.y+20);
+ctx.lineTo(player.x+20,player.y+20); ctx.fill();
+
+// UFOs
+ctx.fillStyle='lime';
+ufos.forEach(u=>{ctx.beginPath();ctx.arc(u.x,u.y,15,0,Math.PI*2);ctx.fill();});
+
+// boss
+if(boss){ctx.fillStyle='purple';ctx.fillRect(boss.x-40,boss.y-20,80,40);} 
+
+// bullets
+ctx.fillStyle='cyan';
+bullets.forEach(b=>ctx.fillRect(b.x,b.y,4,10));
+
+// enemy lasers
+ctx.fillStyle='red';
+enemyLasers.forEach(l=>ctx.fillRect(l.x,l.y,5,15));
+
+// powerups
+powerUps.forEach(p=>{ctx.fillStyle=p.type==='shield'?'yellow':'orange';ctx.fillRect(p.x,p.y,10,10);});
+
+// particles
+ctx.fillStyle='orange';
+particles.forEach(p=>ctx.fillRect(p.x,p.y,3,3));
+}
+
+function loop(){update();draw();requestAnimationFrame(loop);} 
+function restartGame(){init();}
+
+init();loop();
+</script>
+</body>
+</html>
