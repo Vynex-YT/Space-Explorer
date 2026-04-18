@@ -1,2 +1,2 @@
 # Space-Explorer
-Avoid Getting Hit THis is a game file 
+Avoid Getting Hit THis is a game file Supports Google Chrome
